@@ -1,0 +1,10 @@
+[Unit]
+Description=Check GitHub main for KAVACH backend updates every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=kavach-deploy.service
+
+[Install]
+WantedBy=timers.target

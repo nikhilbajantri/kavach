@@ -1,0 +1,10 @@
+[Unit]
+Description=KAVACH backend: deploy latest main if it changed
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/kavach/deploy/autodeploy.sh
+StandardOutput=append:/var/log/kavach-deploy.log
+StandardError=append:/var/log/kavach-deploy.log
