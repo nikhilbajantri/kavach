@@ -36,6 +36,8 @@ def _evidence(item: IndexedEntry, match: str, span: tuple[int, int], score: floa
     return Evidence(
         entry_id=e.id,
         source=e.source,
+        label=e.label,
+        record_id=e.record_id,
         trust=e.trust,
         match=match,
         score=score,

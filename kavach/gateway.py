@@ -11,12 +11,18 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
+from kavach.approvals import ApprovalQueue
 from kavach.attribution.attribute import attribute_value
 from kavach.attribution.flow import sensitivity_flow
 from kavach.identity.broker import CredentialBroker, Identity
 from kavach.models import Decision, FlowReport, ParamAttribution, Verdict
+from kavach.policy.context import build_context, refund_amount_ok, resolve_destinations
+from kavach.policy.directory import TrustDirectory
+from kavach.policy.engine import CedarEngine, PolicyResult, default_engine
+from kavach.policy.explain import explain, risk_summary
+from kavach.policy.remediation import REMEDIATIONS, ticket_customer
 from kavach.provenance.labeller import label_result, label_session_start
 from kavach.provenance.ledger import ProvenanceStore
 from kavach.registry.manifests import ParamKind, ToolSpec, spec_for
@@ -24,6 +30,13 @@ from kavach.transport import Transport
 from mocks.tools import UpstreamError
 
 EventSink = Callable[[str, dict[str, Any]], None]
+ORG_DOMAINS = ("ourbank.in", "support.ourbank.in")
+
+
+class DecisionLog(Protocol):
+    """Where decisions are recorded (the hash-chained evidence ledger)."""
+
+    def append(self, decision: Decision) -> Any: ...
 
 
 @dataclass
@@ -32,6 +45,7 @@ class Session:
     identity: Identity
     store: ProvenanceStore
     decisions: list[Decision] = field(default_factory=list)
+    current_ticket: dict[str, str] | None = None  # the inbound email being handled
 
 
 @dataclass
@@ -54,19 +68,30 @@ class Gateway:
         broker: CredentialBroker,
         *,
         enabled: bool,
+        directory: TrustDirectory | None = None,
+        engine: CedarEngine | None = None,
+        ledger: DecisionLog | None = None,
         agent_id: str = "support-bot-1",
         operator: str = "operator@ourbank.in",
         on_event: EventSink | None = None,
-        org_domains: tuple[str, ...] = ("ourbank.in", "support.ourbank.in"),
+        org_domains: tuple[str, ...] = ORG_DOMAINS,
     ) -> None:
+        if enabled and directory is None:
+            raise ValueError("enforce mode needs a TrustDirectory")
         self.transport = transport
         self.broker = broker
         self.enabled = enabled
+        self.directory = directory
+        self.engine = engine or default_engine()
+        self.ledger = ledger
         self.agent_id = agent_id
         self.operator = operator
         self.on_event = on_event
         self.org_domains = org_domains
+        self.approvals = ApprovalQueue()
+        self.quarantined: set[str] = set()
 
+    # ------------------------------------------------------------------ sessions
     def open_session(self, operator_prompt: str, system_prompt: str, task_id: str | None = None) -> Session:
         task = task_id or f"T-{time.strftime('%Y-%m-%d')}-{uuid.uuid4().hex[:3].upper()}"
         identity = Identity(agent_id=self.agent_id, on_behalf_of=self.operator, task_id=task)
@@ -79,12 +104,12 @@ class Gateway:
         """The only tool list the agent ever sees: KAVACH re-exports upstream tools."""
         return await self.transport.list_tools()
 
+    # ------------------------------------------------------------------ calls
     async def call(self, session: Session, tool: str, args: dict[str, Any]) -> ToolOutcome:
-        call_id = f"call_{uuid.uuid4().hex[:10]}"
         started = time.perf_counter()
         spec = spec_for(tool, args)
         decision = Decision(
-            call_id=call_id,
+            call_id=f"call_{uuid.uuid4().hex[:10]}",
             session_id=session.session_id,
             tool=tool,
             args=args,
@@ -93,30 +118,146 @@ class Gateway:
             explanation="KAVACH disabled: forwarded without enforcement.",
             identity=_identity_dict(session.identity),
             is_sink=spec.sink,
+            ticket_id=(session.current_ticket or {}).get("id"),
+            mode="enforce" if self.enabled else "passthrough",
         )
         if self.enabled:
-            decision.attributions = attribute_call(spec, args, session.store)
-            decision.flow = content_flow(spec, args, session.store) if spec.sink else None
-            decision.verdict = Verdict.ALLOW
-            decision.explanation = "Allowed."
-        token = self.broker.mint(session.identity, tool, decision.final_args or {})
-        decision.token_id = token.jti
-        decision.latency_ms = round((time.perf_counter() - started) * 1000, 3)
+            self._decide(session, spec, decision)
 
         outcome = ToolOutcome(decision=decision)
-        try:
-            outcome.result = await self.transport.call(tool, decision.final_args or {}, token.token)
-        except UpstreamError as exc:
-            outcome.error = f"upstream {exc.status}: {exc}"
-        if outcome.result is not None:
-            label_result(session.store, tool, decision.final_args or {}, outcome.result, call_id)
+        if decision.verdict in (Verdict.ALLOW, Verdict.SANITISE, Verdict.PASSTHROUGH):
+            token = self.broker.mint(session.identity, tool, decision.final_args or {})
+            decision.token_id = token.jti
+            decision.latency_ms = _ms(started)
+            await self._execute(session, decision, token.token, outcome)
+        elif decision.verdict is Verdict.ESCALATE:
+            approval = self.approvals.add(decision, session)
+            decision.approval_id = approval.id
+            decision.latency_ms = _ms(started)
+            outcome.result = {
+                "status": "pending_human_approval",
+                "approval_id": approval.id,
+                "message": "KAVACH escalated this action to a human operator. " + decision.explanation,
+            }
+            self._emit("approval", approval.public())
+        else:
+            decision.latency_ms = _ms(started)
+            outcome.error = f"KAVACH {decision.explanation}"
+            if decision.rule_ids:
+                self._emit("alert", {"decision": decision.model_dump(mode="json")})
+
         session.decisions.append(decision)
+        if self.ledger is not None:
+            self.ledger.append(decision)
         self._emit("decision", {"decision": decision.model_dump(mode="json"), "error": outcome.error})
         return outcome
+
+    async def _execute(self, session: Session, decision: Decision, token: str, outcome: ToolOutcome) -> None:
+        args = decision.final_args or {}
+        try:
+            outcome.result = await self.transport.call(decision.tool, args, token)
+        except UpstreamError as exc:
+            outcome.error = f"upstream {exc.status}: {exc}"
+            return
+        label_result(session.store, decision.tool, args, outcome.result, decision.call_id)
+        if decision.tool == "email.read":
+            session.current_ticket = {
+                "id": str(outcome.result.get("id")),
+                "from": str(outcome.result.get("from")),
+            }
+
+    # ------------------------------------------------------------------ decide
+    def _decide(self, session: Session, spec: ToolSpec, decision: Decision) -> None:
+        assert self.directory is not None
+        customer = ticket_customer(self.directory, (session.current_ticket or {}).get("from"))
+        args = decision.args
+        result, attributions, flow, dests = self._evaluate(session, spec, args, customer)
+        verdict, rules = result.verdict, result.rule_ids()
+        remediations = []
+
+        if verdict is Verdict.SANITISE and spec.remediation:
+            fixed = REMEDIATIONS[spec.remediation](args, attributions, customer, session.store)
+            if fixed is None:
+                verdict = Verdict.BLOCK  # no safe default available: fail closed
+            else:
+                args, remediations = fixed
+                # Re-check the remediated call from scratch; it must stand on its own.
+                result2, attributions2, flow, dests = self._evaluate(session, spec, args, customer)
+                if result2.verdict is not Verdict.ALLOW:
+                    verdict = result2.verdict
+                    rules = sorted(set(rules) | set(result2.rule_ids()))
+                decision.final_args = args
+                attributions = attributions + [
+                    a for a in attributions2 if a.param in {r.param for r in remediations}
+                ]
+
+        decision.verdict = verdict
+        decision.rule_ids = rules
+        decision.attributions = attributions
+        decision.flow = flow
+        decision.destinations = [d.as_dict() for d in dests]
+        decision.remediations = remediations
+        decision.risk = risk_summary(
+            rules, session.store.saw_untrusted, session.store.touched_regulated, result.flagged
+        )
+        decision.explanation = explain(
+            verdict=verdict,
+            rules=rules,
+            tool=spec.name,
+            is_sink=spec.sink,
+            attributions=attributions,
+            flow=flow,
+            destinations=dests,
+            remediations=remediations,
+            customer=customer,
+            args=decision.args,
+        )
+
+    def _evaluate(
+        self, session: Session, spec: ToolSpec, args: dict[str, Any], customer: dict[str, Any] | None
+    ) -> tuple[PolicyResult, list[ParamAttribution], FlowReport | None, list]:
+        assert self.directory is not None
+        attributions = attribute_call(spec, args, session.store)
+        flow = content_flow(spec, args, session.store) if spec.sink else None
+        dests = resolve_destinations(spec, args, self.directory, session.store, self.org_domains)
+        context = build_context(
+            spec,
+            attributions,
+            flow,
+            dests,
+            session.store,
+            amount_matches_order=refund_amount_ok(args, customer) if spec.name == "payments.refund" else True,
+            quarantined=spec.name in self.quarantined,
+        )
+        return self.engine.evaluate(self.agent_id, spec.name, context), attributions, flow, dests
+
+    # ------------------------------------------------------------------ approvals
+    async def resolve_approval(
+        self, approval_id: str, approve: bool, reviewer: str = "operator"
+    ) -> dict[str, Any]:
+        approval = self.approvals.get(approval_id)
+        if approval is None or approval.status != "pending":
+            raise KeyError(approval_id)
+        approval.resolved_by = reviewer
+        if not approve:
+            approval.status = "rejected"
+        else:
+            approval.status = "approved"
+            decision = approval.decision
+            token = self.broker.mint(approval.session.identity, decision.tool, decision.final_args or {})
+            outcome = ToolOutcome(decision=decision)
+            await self._execute(approval.session, decision, token.token, outcome)
+            approval.result, approval.error = outcome.result, outcome.error
+        self._emit("approval", approval.public())
+        return approval.public()
 
     def _emit(self, kind: str, payload: dict[str, Any]) -> None:
         if self.on_event:
             self.on_event(kind, payload)
+
+
+def _ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 3)
 
 
 def _identity_dict(identity: Identity) -> dict[str, str]:

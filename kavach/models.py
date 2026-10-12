@@ -71,6 +71,8 @@ class Evidence(BaseModel):
 
     entry_id: str
     source: str
+    label: str = ""
+    record_id: str | None = None
     trust: Trust
     match: str  # "exact" | "fuzzy" | "numeric" | "decoded"
     score: float = 100.0
@@ -122,3 +124,6 @@ class Decision(BaseModel):
     token_id: str | None = None
     identity: dict[str, str] = Field(default_factory=dict)
     is_sink: bool = False
+    approval_id: str | None = None
+    ticket_id: str | None = None
+    mode: str = "enforce"  # enforce | passthrough

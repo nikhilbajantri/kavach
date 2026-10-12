@@ -9,6 +9,7 @@ from agent.runner import Runtime, run_scenario
 from kavach.gateway import Gateway
 from kavach.identity.broker import CredentialBroker, TokenVerifier, load_or_generate_key
 from kavach.mcp_bridge import MCPTransport, build_gateway_server
+from kavach.policy.directory import WorldDirectory
 from mocks.mcp_servers import build_upstream_servers
 from mocks.world import World
 
@@ -47,7 +48,7 @@ async def test_external_agent_sees_kavach_as_its_only_mcp_server() -> None:
     broker = CredentialBroker(load_or_generate_key(None))
     world = _world(broker)
     async with MCPTransport(build_upstream_servers(world)) as transport:
-        gateway = Gateway(transport, broker, enabled=True)
+        gateway = Gateway(transport, broker, enabled=True, directory=WorldDirectory(world))
         session = gateway.open_session("Process today's support tickets.", "support bot")
         async with Client(build_gateway_server(gateway, session)) as agent:
             listing = await agent.list_tools()

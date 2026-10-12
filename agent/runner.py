@@ -15,6 +15,7 @@ from agent.prompts import OPERATOR_PROMPT, SYSTEM_PROMPT
 from kavach.gateway import EventSink, Gateway
 from kavach.identity.broker import CredentialBroker, TokenVerifier, load_or_generate_key
 from kavach.models import Decision
+from kavach.policy.directory import WorldDirectory
 from kavach.transport import InProcessTransport
 from mocks.email.inbox import InboundEmail
 from mocks.world import World
@@ -43,7 +44,13 @@ def build_runtime(
         inbox=inbox,
         extra_domains=extra_domains,
     )
-    gateway = Gateway(InProcessTransport(world), broker, enabled=enabled, on_event=on_event)
+    gateway = Gateway(
+        InProcessTransport(world),
+        broker,
+        enabled=enabled,
+        directory=WorldDirectory(world),
+        on_event=on_event,
+    )
     return Runtime(world=world, gateway=gateway, broker=broker)
 
 

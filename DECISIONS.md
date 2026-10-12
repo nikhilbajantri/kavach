@@ -45,3 +45,19 @@ Refund and send receipts echo their request fields, such as the recipient. Only 
 ## D11: Flow metric is character coverage
 
 "≥ 30% containment" is defined as the fraction of the outgoing content's characters covered by an 8-character shingle that also occurs in sensitive ledger content. Shingle *share* was rejected: separators between short fields such as PAN numbers drown out the signal. KYC record counting (`records`) is a separate, exact check used for explanations ("50 customer records").
+
+## D12: Graded verdicts from Cedar
+
+Cedar only answers permit or deny. Each rule in `policies/kavach.cedar` is therefore a `forbid` with `@rule` and `@verdict` annotations. On a deny, Cedar reports every satisfied policy, so KAVACH maps those back to their annotations, and the most severe verdict wins. R5 uses verdict `FLAG`: it raises the session's risk level without changing the verdict. A Cedar evaluation error fails closed (BLOCK).
+
+## D13: SANITISE results are re-checked
+
+After remediation (a refund recipient replaced with the customer's CRM-verified UPI or account), the whole pipeline re-evaluates the new arguments. A remediated call must pass on its own merits. The looked-up value is added to the provenance ledger with source `kavach.directory` (trusted), because KAVACH itself read it from the system of record. If no customer can be resolved from the ticket sender, SANITISE becomes BLOCK.
+
+## D14: URLs inside outbound content are destinations
+
+A link in an email body is treated as a destination (EchoLeak-style exfiltration). R3 applies to every linked domain. R2 applies only when the URL itself carries sensitive data, so an ordinary link next to a customer's own statement does not cause a false positive.
+
+## D15: Unknown domain age is not "young"
+
+The RDAP mock covers every domain used in the demo and the benchmark. A domain absent from the registry is reported as "age unknown" and does not trigger R3; R2 still blocks sensitive data going there. A production deployment would treat failed RDAP lookups as an ESCALATE.

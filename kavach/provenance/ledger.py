@@ -60,6 +60,7 @@ class ProvenanceStore:
     sensitive_shingles: dict[Sensitivity, set[str]] = field(default_factory=dict)
     # (normalised value, record id, entry id) for KYC fields, so flow checks skip everything else.
     record_values: list[tuple[str, str, str]] = field(default_factory=list)
+    saw_untrusted: bool = False
     _ids: itertools.count = field(default_factory=lambda: itertools.count(1))
 
     def add(
@@ -92,15 +93,12 @@ class ProvenanceStore:
         indexed = IndexedEntry(entry=entry, views=all_views(text), numbers=extract_numbers(text))
         self.entries.append(indexed)
         self.by_id[entry.id] = indexed
+        self.saw_untrusted |= trust is Trust.UNTRUSTED
         if sensitivity.rank >= Sensitivity.CONFIDENTIAL.rank:
             self.sensitive_shingles.setdefault(sensitivity, set()).update(shingles(indexed.plain.text))
         if field_name in RECORD_FIELDS and record_id and len(indexed.plain.text) >= 6:
             self.record_values.append((indexed.plain.text, record_id, entry.id))
         return entry
-
-    @property
-    def saw_untrusted(self) -> bool:
-        return any(e.entry.trust is Trust.UNTRUSTED for e in self.entries)
 
     @property
     def touched_regulated(self) -> bool:
