@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -214,6 +215,15 @@ def create_app(ledger_path: str | None = None) -> FastAPI:
         )
         st(request).runtimes[session.session_id] = live
         return mask(outcome.decision.model_dump(mode="json"))
+
+    @app.get("/bench/results")
+    def bench_results() -> dict[str, Any]:
+        """Latest `make bench` output (bench/results.json)."""
+        from bench.runner import RESULTS_JSON
+
+        if not RESULTS_JSON.exists():
+            raise HTTPException(404, "no benchmark results yet; run `make bench`")
+        return json.loads(RESULTS_JSON.read_text(encoding="utf-8"))
 
     @app.get("/metrics/latency")
     def latency(request: Request) -> dict[str, Any]:
