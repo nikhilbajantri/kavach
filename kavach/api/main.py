@@ -26,6 +26,7 @@ class DemoRequest(BaseModel):
     scenario: str = "nbfc_2am"
     pace: float = 0.45
     lanes: list[str] = ["off", "on"]
+    provider: str | None = None  # defaults to LLM_PROVIDER (scripted)
 
 
 class Settings(BaseModel):
@@ -73,7 +74,11 @@ def create_app(ledger_path: str | None = None) -> FastAPI:
     @app.post("/demo/run")
     async def run_demo(body: DemoRequest, request: Request) -> dict[str, str]:
         lanes = tuple(lane for lane in body.lanes if lane in {"off", "on"}) or ("off", "on")
-        return {"run_id": st(request).start_demo(body.scenario, max(0.0, min(body.pace, 3.0)), lanes)}
+        return {
+            "run_id": st(request).start_demo(
+                body.scenario, max(0.0, min(body.pace, 3.0)), lanes, body.provider
+            )
+        }
 
     @app.get("/demo/runs/{run_id}")
     def get_run(run_id: str, request: Request) -> dict[str, Any]:

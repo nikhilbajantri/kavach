@@ -8,6 +8,7 @@ import statistics
 import uuid
 from typing import Any
 
+from agent.llm.factory import make_llm
 from agent.llm.scripted import load_plan
 from agent.runner import RunOutcome, Runtime, build_runtime, run_scenario
 from kavach.api.events import EventBus
@@ -41,17 +42,23 @@ class AppState:
 
     # ------------------------------------------------------------------ demo
     def start_demo(
-        self, scenario: str = "nbfc_2am", pace: float = 0.45, lanes: tuple[str, ...] = ("off", "on")
+        self,
+        scenario: str = "nbfc_2am",
+        pace: float = 0.45,
+        lanes: tuple[str, ...] = ("off", "on"),
+        provider: str | None = None,
     ) -> str:
         run_id = f"run_{uuid.uuid4().hex[:8]}"
         self.runs[run_id] = {"run_id": run_id, "scenario": scenario, "status": "running", "lanes": {}}
         self.last_run_id = run_id
-        task = asyncio.create_task(self._run_demo(run_id, scenario, pace, lanes))
+        task = asyncio.create_task(self._run_demo(run_id, scenario, pace, lanes, provider))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return run_id
 
-    async def _run_demo(self, run_id: str, scenario: str, pace: float, lanes: tuple[str, ...]) -> None:
+    async def _run_demo(
+        self, run_id: str, scenario: str, pace: float, lanes: tuple[str, ...], provider: str | None
+    ) -> None:
         plan = load_plan(scenario)
         self.bus.publish(
             "run_started",
@@ -59,7 +66,9 @@ class AppState:
             run_id=run_id,
         )
         try:
-            results = await asyncio.gather(*(self._run_lane(run_id, plan, lane, pace) for lane in lanes))
+            results = await asyncio.gather(
+                *(self._run_lane(run_id, plan, lane, pace, provider) for lane in lanes)
+            )
         except Exception as exc:  # surface failures to the dashboard instead of dying silently
             self.runs[run_id]["status"] = "failed"
             self.bus.publish("run_failed", {"error": repr(exc)}, run_id=run_id)
@@ -71,7 +80,9 @@ class AppState:
             run_id=run_id,
         )
 
-    async def _run_lane(self, run_id: str, plan: Any, lane: str, pace: float) -> dict[str, Any]:
+    async def _run_lane(
+        self, run_id: str, plan: Any, lane: str, pace: float, provider: str | None
+    ) -> dict[str, Any]:
         enabled = LANES[lane]
 
         def emit(kind: str, data: dict[str, Any]) -> None:
@@ -81,7 +92,11 @@ class AppState:
 
         runtime = build_runtime(enabled=enabled, on_event=emit, ledger=self.ledger)
         runtime.gateway.approvals = self.approvals
-        outcome, rt = await run_scenario(plan, enabled=enabled, runtime=runtime, narrate=emit, pace=pace)
+        llm = make_llm(plan, provider)  # live providers get no artificial pacing
+        pace = pace if llm.mode == "scripted" else 0.0
+        outcome, rt = await run_scenario(
+            plan, enabled=enabled, runtime=runtime, llm=llm, narrate=emit, pace=pace
+        )
         self.runtimes[outcome.transcript.session_id] = rt
         summary = summarise(outcome)
         self.runs[run_id]["lanes"][lane] = summary
