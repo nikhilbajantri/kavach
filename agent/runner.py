@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from agent.llm.base import LLM
+from agent.llm.base import LLM, AssistantTurn, Message
 from agent.llm.scripted import Plan, ScriptedLLM, TaskSpec
 from agent.loop import Transcript, run_agent
 from agent.prompts import OPERATOR_PROMPT, SYSTEM_PROMPT
-from kavach.gateway import EventSink, Gateway
+from kavach.gateway import DecisionLog, EventSink, Gateway
 from kavach.identity.broker import CredentialBroker, TokenVerifier, load_or_generate_key
 from kavach.models import Decision
 from kavach.policy.directory import WorldDirectory
@@ -36,6 +37,7 @@ def build_runtime(
     inbox: list[InboundEmail] | None = None,
     on_event: EventSink | None = None,
     extra_domains: dict[str, dict[str, Any]] | None = None,
+    ledger: DecisionLog | None = None,
 ) -> Runtime:
     broker = CredentialBroker(load_or_generate_key(os.getenv("KAVACH_SIGNING_KEY_PEM")))
     world = World(
@@ -49,6 +51,7 @@ def build_runtime(
         broker,
         enabled=enabled,
         directory=WorldDirectory(world),
+        ledger=ledger,
         on_event=on_event,
     )
     return Runtime(world=world, gateway=gateway, broker=broker)
@@ -94,6 +97,26 @@ def _check(world: World, check: dict[str, dict[str, Any]]) -> bool:
     raise ValueError(f"unknown task check {kind}")
 
 
+class NarratedLLM:
+    """Wraps any LLM to stream its reasoning to the dashboard and pace the demo for humans."""
+
+    def __init__(self, inner: LLM, narrate: EventSink | None, pace: float = 0.0) -> None:
+        self.inner = inner
+        self.mode = inner.mode
+        self.narrate = narrate
+        self.pace = pace
+
+    async def step(self, history: list[Message], tools: list[dict[str, Any]]) -> AssistantTurn:
+        turn = await self.inner.step(history, tools)
+        if self.pace:
+            await asyncio.sleep(self.pace)
+        if self.narrate:
+            self.narrate(
+                "thought", {"text": turn.text, "tool_calls": [c.model_dump() for c in turn.tool_calls]}
+            )
+        return turn
+
+
 async def run_scenario(
     plan: Plan,
     *,
@@ -102,10 +125,14 @@ async def run_scenario(
     on_event: EventSink | None = None,
     inbox: list[InboundEmail] | None = None,
     runtime: Runtime | None = None,
+    narrate: EventSink | None = None,
+    pace: float = 0.0,
 ) -> tuple[RunOutcome, Runtime]:
     rt = runtime or build_runtime(enabled=enabled, inbox=inbox, on_event=on_event)
     session = rt.gateway.open_session(OPERATOR_PROMPT, SYSTEM_PROMPT, task_id=DEMO_TASK_ID)
-    model = llm or ScriptedLLM(plan)
+    model: LLM = llm or ScriptedLLM(plan)
+    if narrate or pace:
+        model = NarratedLLM(model, narrate, pace)
     transcript = await run_agent(
         model, rt.gateway, session, system_prompt=SYSTEM_PROMPT, operator_prompt=OPERATOR_PROMPT
     )

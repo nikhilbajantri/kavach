@@ -29,6 +29,7 @@ Building milestone by milestone. See [PLAN.md](PLAN.md).
 - [x] M2: mock systems (CRM with 60 customers, inbox, Razorpay-style refunds that need a token, RDAP registry) plus a scripted agent. With KAVACH OFF, the attack succeeds: ₹48,000 goes to the attacker and 50 KYC records leak.
 - [x] M3: gateway core: provenance ledger, per-field labelling, CONTROL/CONTENT tool typing, Argument Provenance Attribution (handles Base64, hex, URL encoding, homoglyphs, zero-width characters and ₹ numerals) and sensitivity-flow detection. Runs over real MCP in both directions.
 - [x] M4: Cedar policies R0–R6, SANITISE remediation, plain-language explanations and a human-approval queue. With KAVACH ON, the refund is SANITISED to Ravi's verified UPI, the KYC export is BLOCKED (R1, R2, R3) and the customer reply is ALLOWED. Result: ₹0 lost, 0 records leaked, 4/4 tickets completed.
+- [x] M5: Ed25519 action tokens (60 s, bound to the exact arguments) that upstreams verify; a hash-chained evidence ledger with masked PII and `/ledger/verify`; an "RBI FREE-AI / DPDP evidence pack" export; the dashboard API with an SSE stream.
 
 ## Team
 

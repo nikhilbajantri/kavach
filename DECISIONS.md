@@ -61,3 +61,11 @@ A link in an email body is treated as a destination (EchoLeak-style exfiltration
 ## D15: Unknown domain age is not "young"
 
 The RDAP mock covers every domain used in the demo and the benchmark. A domain absent from the registry is reported as "age unknown" and does not trigger R3; R2 still blocks sensitive data going there. A production deployment would treat failed RDAP lookups as an ESCALATE.
+
+## D16: Ed25519 action tokens
+
+The broker signs tokens with EdDSA (Ed25519) rather than a shared HMAC secret. Upstream services hold only the public key, so a compromised upstream cannot mint tokens itself. If `KAVACH_SIGNING_KEY_PEM` is unset, a fresh key is generated per process.
+
+## D17: The ledger stores masked arguments plus a hash of the raw arguments
+
+Each evidence record keeps masked arguments, plus `args_hash`, the SHA-256 of the exact raw arguments. That hash equals the `args_hash` claim of the action token, so the ledger can prove what was executed without keeping a second copy of the PII (DPDP data minimisation). Everything sent to the browser (SSE events, approvals, alerts) passes through the same masker.

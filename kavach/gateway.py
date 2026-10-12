@@ -75,6 +75,7 @@ class Gateway:
         operator: str = "operator@ourbank.in",
         on_event: EventSink | None = None,
         org_domains: tuple[str, ...] = ORG_DOMAINS,
+        approvals: ApprovalQueue | None = None,
     ) -> None:
         if enabled and directory is None:
             raise ValueError("enforce mode needs a TrustDirectory")
@@ -88,8 +89,9 @@ class Gateway:
         self.operator = operator
         self.on_event = on_event
         self.org_domains = org_domains
-        self.approvals = ApprovalQueue()
+        self.approvals = approvals if approvals is not None else ApprovalQueue()
         self.quarantined: set[str] = set()
+        self.sessions: dict[str, Session] = {}
 
     # ------------------------------------------------------------------ sessions
     def open_session(self, operator_prompt: str, system_prompt: str, task_id: str | None = None) -> Session:
@@ -98,7 +100,9 @@ class Gateway:
         session_id = f"sess_{uuid.uuid4().hex[:10]}"
         store = ProvenanceStore(session_id=session_id)
         label_session_start(store, system_prompt, operator_prompt, self.org_domains)
-        return Session(session_id=session_id, identity=identity, store=store)
+        session = Session(session_id=session_id, identity=identity, store=store)
+        self.sessions[session_id] = session
+        return session
 
     async def list_tools(self) -> list[dict[str, Any]]:
         """The only tool list the agent ever sees: KAVACH re-exports upstream tools."""
@@ -131,7 +135,7 @@ class Gateway:
             decision.latency_ms = _ms(started)
             await self._execute(session, decision, token.token, outcome)
         elif decision.verdict is Verdict.ESCALATE:
-            approval = self.approvals.add(decision, session)
+            approval = self.approvals.add(decision, session, executor=self)
             decision.approval_id = approval.id
             decision.latency_ms = _ms(started)
             outcome.result = {

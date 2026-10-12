@@ -23,6 +23,7 @@ class Approval:
     resolved_by: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    executor: Any = field(default=None, repr=False)  # the Gateway that can execute it
 
     def public(self) -> dict[str, Any]:
         return {
@@ -41,8 +42,10 @@ class ApprovalQueue:
         self._items: dict[str, Approval] = {}
         self._ids = itertools.count(1)
 
-    def add(self, decision: Decision, session: Session) -> Approval:
-        approval = Approval(id=f"apr_{next(self._ids):04d}", decision=decision, session=session)
+    def add(self, decision: Decision, session: Session, executor: Any = None) -> Approval:
+        approval = Approval(
+            id=f"apr_{next(self._ids):04d}", decision=decision, session=session, executor=executor
+        )
         self._items[approval.id] = approval
         return approval
 
