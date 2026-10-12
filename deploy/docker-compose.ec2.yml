@@ -1,0 +1,33 @@
+# Backend on a single VM: KAVACH API behind Caddy (automatic HTTPS via Let's Encrypt).
+# Usage on the server:  SITE_ADDRESS=<ip-with-dashes>.sslip.io docker compose -f deploy/docker-compose.ec2.yml up -d --build
+services:
+  api:
+    build: ..
+    restart: unless-stopped
+    environment:
+      LLM_PROVIDER: scripted
+      KAVACH_DATA_DIR: /app/data
+    volumes:
+      - kavach-data:/app/data
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS, e.g. 3-26-223-5.sslip.io}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  kavach-data:
+  caddy-data:
+  caddy-config:

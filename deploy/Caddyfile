@@ -1,0 +1,6 @@
+{$SITE_ADDRESS} {
+	# flush_interval -1 streams Server-Sent Events immediately instead of buffering them.
+	reverse_proxy api:8000 {
+		flush_interval -1
+	}
+}
