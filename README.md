@@ -2,6 +2,8 @@
 
 > **Enforce, don't detect.** KAVACH tracks the provenance of every value an AI agent uses. Deterministic policy, running outside the LLM, guarantees that untrusted data can never choose *who / where / how much* in a privileged action, and that regulated data never flows to an untrusted destination.
 
+**Live demo:** https://kavach-jade-two.vercel.app (dashboard on Vercel) · API: https://3-26-223-5.sslip.io/health (AWS EC2)
+
 ![KAVACH dashboard](docs/screenshot.png)
 <!-- TODO: replace with a screenshot or GIF of the Live Demo split view -->
 
@@ -64,6 +66,8 @@ python tasks.py demo                       # Makefile equivalents: make demo | d
 Then open http://localhost:3000 and click **Run scenario**. Everything runs offline in deterministic scripted mode.
 
 **Live LLM (optional):** `pip install -e ".[llm]"`, then set `LLM_PROVIDER=anthropic|openai|ollama` and the matching key in `.env` (see `.env.example`). The terminal runner is `python -m agent.cli --provider anthropic --kavach on`. A live model may or may not fall for the injection; KAVACH holds either way.
+
+**Deploying:** the backend runs on any VM with `deploy/docker-compose.ec2.yml`, which puts the API behind Caddy with automatic HTTPS. Put `SITE_ADDRESS=<ip-with-dashes>.sslip.io` in `deploy/.env` and open ports 80 and 443. The frontend is `web/` on Vercel, with `NEXT_PUBLIC_API_URL` set to that HTTPS address.
 
 **Use KAVACH from your own agent:** KAVACH is also an MCP server (`kavach/mcp_bridge.py` → `build_gateway_server`). Point your agent at it as its only MCP server.
 
