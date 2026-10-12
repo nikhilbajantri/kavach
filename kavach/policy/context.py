@@ -22,6 +22,18 @@ NO_AGE = 100_000  # Cedar needs a Long; "no domain to age" must never look young
 REMEDIABLE = {"refund_to_verified_recipient": {"recipient_upi", "recipient_account"}}
 
 
+def split_recipients(value: object) -> list[str]:
+    """Split 'a@x, b@y; c@z' into addresses (also strips display names like 'Ravi <r@x>')."""
+    parts = re.split(r"[,;]", str(value))
+    out = []
+    for part in parts:
+        match = re.search(r"<([^>]+)>", part)
+        address = (match.group(1) if match else part).strip()
+        if address:
+            out.append(address)
+    return out
+
+
 @dataclass
 class Destination:
     param: str
@@ -50,20 +62,23 @@ def resolve_destinations(
 ) -> list[Destination]:
     out: list[Destination] = []
     for name in spec.destination_params():
-        value = str(args.get(name) or "").strip()
-        if not value:
-            continue
+        raw = str(args.get(name) or "").strip()
         kind = spec.params[name].kind.value
-        owner = directory.recipient_owner(value)
-        domain = value.rsplit("@", 1)[-1].lower() if kind == ParamKind.EMAIL.value and "@" in value else None
-        if domain and _domain_trust(domain, org_domains):
-            trust = "org"
-        elif owner:
-            trust = "verified_customer"
-        else:
-            trust = "external"
-        age = directory.domain_age_days(domain) if domain else None
-        out.append(Destination(name, value, kind, trust, domain, age, owner))
+        for value in split_recipients(raw) if kind == ParamKind.EMAIL.value else [raw]:
+            if not value:
+                continue
+            owner = directory.recipient_owner(value)
+            domain = (
+                value.rsplit("@", 1)[-1].lower() if kind == ParamKind.EMAIL.value and "@" in value else None
+            )
+            if domain and _domain_trust(domain, org_domains):
+                trust = "org"
+            elif owner:
+                trust = "verified_customer"
+            else:
+                trust = "external"
+            age = directory.domain_age_days(domain) if domain else None
+            out.append(Destination(name, value, kind, trust, domain, age, owner))
 
     # Links inside outbound content are destinations too (EchoLeak-style exfiltration via URLs).
     if spec.category == "outbound":

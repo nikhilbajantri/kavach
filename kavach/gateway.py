@@ -18,7 +18,7 @@ from kavach.attribution.attribute import attribute_value
 from kavach.attribution.flow import sensitivity_flow
 from kavach.identity.broker import CredentialBroker, Identity
 from kavach.models import Decision, FlowReport, ParamAttribution, Verdict
-from kavach.policy.context import build_context, refund_amount_ok, resolve_destinations
+from kavach.policy.context import build_context, refund_amount_ok, resolve_destinations, split_recipients
 from kavach.policy.directory import TrustDirectory
 from kavach.policy.engine import CedarEngine, PolicyResult, default_engine
 from kavach.policy.explain import explain, risk_summary
@@ -314,8 +314,11 @@ def attribute_call(spec: ToolSpec, args: dict[str, Any], store: ProvenanceStore)
     out = []
     for name in spec.control_params():
         if name in args and args[name] not in (None, ""):
-            numeric = spec.params[name].kind is ParamKind.AMOUNT
-            out.append(attribute_value(name, args[name], store, numeric=numeric))
+            kind = spec.params[name].kind
+            # "a@x.com, b@y.co" is two recipients: each must stand on its own provenance.
+            values = split_recipients(args[name]) if kind is ParamKind.EMAIL else [args[name]]
+            for value in values:
+                out.append(attribute_value(name, value, store, numeric=kind is ParamKind.AMOUNT))
     return out
 
 

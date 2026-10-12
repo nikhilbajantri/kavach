@@ -30,26 +30,34 @@ def _pii_hits(raw: str, views: list[str]) -> list[str]:
     return sorted(set(hits))
 
 
-def _coverage(text: str, grams: list[str], pool: set[str], n: int = SHINGLE) -> float:
-    """Fraction of the content's characters covered by a shingle that also occurs in the pool.
+# shingle_rank values are 1 + Sensitivity.rank: 3 = confidential, 4 = regulated PII.
+_REGULATED = bytes.maketrans(bytes(range(5)), b"00001")
+_CONF_OR_HIGHER = bytes.maketrans(bytes(range(5)), b"00011")
+_RUNS = re.compile(rb"1(?:0{0,%d}1)*" % (SHINGLE - 1))
+
+
+def _coverage(flags: bytes, length: int, n: int = SHINGLE) -> float:
+    """Fraction of the content's characters covered by a sensitive shingle.
 
     Character coverage (not shingle share) keeps short fields like a PAN from being
-    drowned out by the separators between them.
+    drowned out by the separators between them. Runs of hits closer than `n`
+    overlap, so each merged run covers its span plus n - 1 characters.
     """
-    if not text:
-        return 0.0
+    covered = sum(m.end() - m.start() + n - 1 for m in _RUNS.finditer(flags))
+    return min(1.0, covered / length) if length else 0.0
+
+
+def _level_coverage(text: str, ranks: dict[str, int], n: int = SHINGLE) -> tuple[float, float]:
+    """(regulated coverage, confidential-or-higher coverage), with the merging done in C."""
     if len(text) < n:
-        return 1.0 if text in pool else 0.0
-    covered, reach = 0, 0
-    for i in [i for i, gram in enumerate(grams) if gram in pool]:
-        start = max(i, reach)
-        reach = i + n
-        covered += reach - start
-    return covered / len(text)
-
-
-def _grams(text: str, n: int = SHINGLE) -> list[str]:
-    return [text[i : i + n] for i in range(len(text) - n + 1)]
+        rank = ranks.get(text, 0)
+        return (1.0 if rank >= 4 else 0.0, 1.0 if rank >= 3 else 0.0)
+    get = ranks.get
+    levels = bytes([get(text[i : i + n], 0) for i in range(len(text) - n + 1)])
+    return (
+        _coverage(levels.translate(_REGULATED), len(text), n),
+        _coverage(levels.translate(_CONF_OR_HIGHER), len(text), n),
+    )
 
 
 def sensitivity_flow(content: str, store: ProvenanceStore) -> FlowReport:
@@ -60,28 +68,25 @@ def sensitivity_flow(content: str, store: ProvenanceStore) -> FlowReport:
     combined = "\n".join(v.text for v in views)
     report = FlowReport()
 
-    grams = [_grams(v.text) for v in views]
-    for level in (Sensitivity.REGULATED_PII, Sensitivity.CONFIDENTIAL):
-        pool = store.sensitive_shingles.get(level)
-        if not pool:
-            continue
-        share = max(_coverage(v.text, g, pool) for v, g in zip(views, grams, strict=True))
-        if share > report.containment:
-            report.containment = round(share, 3)
-        if share >= CONTAINMENT_THRESHOLD and level.rank > report.sensitivity.rank:
-            report.sensitivity = level
+    if store.shingle_rank:
+        shares = [_level_coverage(v.text, store.shingle_rank) for v in views]
+        regulated = max(s[0] for s in shares)
+        confidential = max(s[1] for s in shares)
+        report.containment = round(max(regulated, confidential), 3)
+        if regulated >= CONTAINMENT_THRESHOLD:
+            report.sensitivity = Sensitivity.REGULATED_PII
+        elif confidential >= CONTAINMENT_THRESHOLD:
+            report.sensitivity = Sensitivity.CONFIDENTIAL
 
     report.pii_patterns = _pii_hits(content, [dec for dec, _, _ in layers])
     if report.pii_patterns:
         report.sensitivity = Sensitivity.REGULATED_PII
 
     # Count distinct customer records whose KYC fields appear in the content.
-    # A cheap shingle pre-filter avoids a full substring scan for each of hundreds of entries.
-    content_shingles = {combined[i : i + 6] for i in range(len(combined) - 5)}
     records: set[str] = set()
     evidence: list[str] = []
     for needle, record_id, entry_id in store.record_values:
-        if needle[:6] in content_shingles and needle[-6:] in content_shingles and needle in combined:
+        if needle in combined:
             records.add(record_id)
             if len(evidence) < 60:
                 evidence.append(entry_id)

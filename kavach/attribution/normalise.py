@@ -74,10 +74,15 @@ def normalise_with_map(text: str) -> tuple[str, tuple[int, ...]]:
     return "".join(out), tuple(index_list)
 
 
+_NEEDS_FOLD = re.compile("[" + re.escape("".join(chr(c) for c in (*ZERO_WIDTH, *HOMOGLYPHS))) + "]")
+
+
 def normalise(text: str) -> str:
     """Whole-string variant (C-speed) used on the decision hot path."""
     if not text.isascii():
-        text = unicodedata.normalize("NFKC", text).translate(ZERO_WIDTH).translate(HOMOGLYPHS)
+        text = unicodedata.normalize("NFKC", text)
+        if _NEEDS_FOLD.search(text):  # translate() is slow; only pay for it when needed
+            text = text.translate(ZERO_WIDTH).translate(HOMOGLYPHS)
     return "".join(text.lower().split())
 
 

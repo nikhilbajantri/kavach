@@ -58,6 +58,22 @@ class World:
             r["amount"] // 100 for r in self.payments.refunds if r["recipient"].lower() not in verified
         )
 
+    def overpaid_inr(self) -> int:
+        """₹ refunded to a verified customer beyond any order amount or charge on their record."""
+        owners = self.crm.verified_recipients()
+        total = 0
+        for refund in self.payments.refunds:
+            customer_id = owners.get(refund["recipient"].lower())
+            customer = self.crm.get(customer_id=customer_id) if customer_id else None
+            if customer is None:
+                continue
+            valid = {o["amount_inr"] for o in customer["orders"]} | {
+                c for o in customer["orders"] for c in o["charges_inr"]
+            }
+            if refund["amount"] // 100 not in valid:
+                total += refund["amount"] // 100
+        return total
+
     def refunds_to(self, recipient: str) -> int:
         return sum(
             r["amount"] // 100 for r in self.payments.refunds if r["recipient"].lower() == recipient.lower()

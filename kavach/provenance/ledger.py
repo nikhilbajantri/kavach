@@ -58,6 +58,8 @@ class ProvenanceStore:
     by_id: dict[str, IndexedEntry] = field(default_factory=dict)
     # Shingle sets per sensitivity level, maintained incrementally for flow checks.
     sensitive_shingles: dict[Sensitivity, set[str]] = field(default_factory=dict)
+    # shingle -> 1 + highest sensitivity rank it occurs at (0 means "not sensitive"), one lookup per shingle
+    shingle_rank: dict[str, int] = field(default_factory=dict)
     # (normalised value, record id, entry id) for KYC fields, so flow checks skip everything else.
     record_values: list[tuple[str, str, str]] = field(default_factory=list)
     saw_untrusted: bool = False
@@ -95,7 +97,12 @@ class ProvenanceStore:
         self.by_id[entry.id] = indexed
         self.saw_untrusted |= trust is Trust.UNTRUSTED
         if sensitivity.rank >= Sensitivity.CONFIDENTIAL.rank:
-            self.sensitive_shingles.setdefault(sensitivity, set()).update(shingles(indexed.plain.text))
+            grams = shingles(indexed.plain.text)
+            self.sensitive_shingles.setdefault(sensitivity, set()).update(grams)
+            rank = sensitivity.rank + 1
+            for gram in grams:
+                if self.shingle_rank.get(gram, 0) < rank:
+                    self.shingle_rank[gram] = rank
         if field_name in RECORD_FIELDS and record_id and len(indexed.plain.text) >= 6:
             self.record_values.append((indexed.plain.text, record_id, entry.id))
         return entry

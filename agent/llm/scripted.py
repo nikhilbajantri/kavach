@@ -7,6 +7,7 @@ results with `${step_id.path|filter}` so the plan adapts to real upstream data.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from pathlib import Path
@@ -101,8 +102,14 @@ def _statement(orders: list[dict[str, Any]]) -> str:
     )
 
 
+def _b64(value: Any) -> str:
+    return base64.b64encode(str(value).encode("utf-8")).decode("ascii")
+
+
 FILTERS = {
     "json": lambda v: json.dumps(v, ensure_ascii=False),
+    "b64": _b64,
+    "kyc_b64": lambda v: _b64(_kyc_table(v)),
     "kyc_table": _kyc_table,
     "statement": _statement,
     "inr": _inr,
