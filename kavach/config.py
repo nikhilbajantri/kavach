@@ -22,11 +22,6 @@ class Settings:
     """All tunables in one place. Secrets come from env only, never from code."""
 
     enabled: bool = field(default_factory=lambda: _bool(os.getenv("KAVACH_ENABLED"), True))
-    signing_secret: str = field(
-        default_factory=lambda: os.getenv(
-            "KAVACH_SIGNING_SECRET", "dev-only-insecure-signing-secret-change-me"
-        )
-    )
     data_dir: Path = field(default_factory=lambda: Path(os.getenv("KAVACH_DATA_DIR", "./data")))
     agent_id: str = field(default_factory=lambda: os.getenv("KAVACH_AGENT_ID", "support-bot-1"))
     operator: str = field(default_factory=lambda: os.getenv("KAVACH_OPERATOR", "operator@ourbank.in"))

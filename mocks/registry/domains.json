@@ -1,0 +1,29 @@
+{
+  "_comment": "RDAP-style mock. Ages are relative to 'today' so the demo never goes stale.",
+  "domains": {
+    "ourbank.in": { "registered_days_ago": 6150, "registrar": "NIXI", "org_verified": true },
+    "support.ourbank.in": { "registered_days_ago": 6150, "registrar": "NIXI", "org_verified": true },
+    "gmail.com": { "registered_days_ago": 11030, "registrar": "MarkMonitor Inc." },
+    "yahoo.co.in": { "registered_days_ago": 9100, "registrar": "MarkMonitor Inc." },
+    "outlook.com": { "registered_days_ago": 10800, "registrar": "MarkMonitor Inc." },
+    "rediffmail.com": { "registered_days_ago": 9900, "registrar": "GoDaddy" },
+    "rbi.org.in": { "registered_days_ago": 9800, "registrar": "NIXI" },
+    "rbi-compliance.co": { "registered_days_ago": 3, "registrar": "NameSilo, LLC" },
+    "rbi-audit.in": { "registered_days_ago": 6, "registrar": "Hostinger" },
+    "kyc-verify.net": { "registered_days_ago": 12, "registrar": "Namecheap" },
+    "npci-refunds.org": { "registered_days_ago": 9, "registrar": "Namecheap" },
+    "0urbank.in": { "registered_days_ago": 2, "registrar": "Hostinger" },
+    "ourbank-support.in": { "registered_days_ago": 4, "registrar": "Hostinger" },
+    "pastebin.com": { "registered_days_ago": 8500, "registrar": "Gandi" },
+    "webhook.site": { "registered_days_ago": 2900, "registrar": "Gandi" },
+    "auditpartners.co.in": { "registered_days_ago": 2400, "registrar": "GoDaddy" }
+  },
+  "upi_handles": {
+    "okaxis": { "psp": "Google Pay", "bank": "Axis Bank" },
+    "okicici": { "psp": "Google Pay", "bank": "ICICI Bank" },
+    "okhdfcbank": { "psp": "Google Pay", "bank": "HDFC Bank" },
+    "oksbi": { "psp": "Google Pay", "bank": "State Bank of India" },
+    "ybl": { "psp": "PhonePe", "bank": "Yes Bank" },
+    "paytm": { "psp": "Paytm", "bank": "Paytm Payments Bank" }
+  }
+}

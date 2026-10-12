@@ -26,6 +26,7 @@ python tasks.py demo         # same targets as the Makefile: dev | test | lint |
 Building milestone by milestone. See [PLAN.md](PLAN.md).
 
 - [x] M1: skeleton (FastAPI health check, Next.js shell, CI, Docker)
+- [x] M2: mock systems (CRM with 60 customers, inbox, Razorpay-style refunds that need a token, RDAP registry) plus a scripted agent. With KAVACH OFF, the attack succeeds: ₹48,000 goes to the attacker and 50 KYC records leak.
 
 ## Team
 
