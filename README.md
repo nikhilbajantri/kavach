@@ -27,6 +27,7 @@ Building milestone by milestone. See [PLAN.md](PLAN.md).
 
 - [x] M1: skeleton (FastAPI health check, Next.js shell, CI, Docker)
 - [x] M2: mock systems (CRM with 60 customers, inbox, Razorpay-style refunds that need a token, RDAP registry) plus a scripted agent. With KAVACH OFF, the attack succeeds: ₹48,000 goes to the attacker and 50 KYC records leak.
+- [x] M3: gateway core: provenance ledger, per-field labelling, CONTROL/CONTENT tool typing, Argument Provenance Attribution (handles Base64, hex, URL encoding, homoglyphs, zero-width characters and ₹ numerals) and sensitivity-flow detection. Runs over real MCP in both directions.
 
 ## Team
 
