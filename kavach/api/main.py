@@ -16,6 +16,7 @@ from kavach.api.state import AppState
 from kavach.ledger.export import export_json, export_markdown
 from kavach.ledger.mask import mask
 from kavach.models import Sensitivity
+from mocks.email.inbox import default_inbox, hidden_text, visible_text
 
 
 class DemoRequest(BaseModel):
@@ -103,6 +104,22 @@ def create_app(ledger_path: str | None = None) -> FastAPI:
         if entry.sensitivity is Sensitivity.REGULATED_PII:
             data["text"] = mask(entry.text)
         return data
+
+    @app.get("/inbox")
+    def inbox() -> list[dict[str, Any]]:
+        """The demo inbox as a human sees it, plus what is hidden from human eyes."""
+        return [
+            {
+                "id": m.id,
+                "from": m.from_addr,
+                "from_name": m.from_name,
+                "subject": m.subject,
+                "received_at": m.received_at,
+                "visible": visible_text(m.body_html),
+                "hidden": hidden_text(m.body_html),
+            }
+            for m in default_inbox()
+        ]
 
     # ---------------------------------------------------------------- approvals
     @app.get("/approvals")

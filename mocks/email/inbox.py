@@ -26,6 +26,21 @@ class InboundEmail(BaseModel):
         return html_to_text(self.body_html)
 
 
+_HIDDEN = re.compile(
+    r"<!--(.*?)-->|<(\w+)[^>]*style=\"[^\"]*(?:color:\s*#fff(?:fff)?|display:\s*none|font-size:\s*[01]px)[^\"]*\"[^>]*>(.*?)</\2>",
+    re.S | re.I,
+)
+
+
+def hidden_text(body_html: str) -> list[str]:
+    """Text a human reader would not see (comments, white-on-white, 0-1px). Used only by the UI."""
+    return [html.unescape((m.group(1) or m.group(3) or "").strip()) for m in _HIDDEN.finditer(body_html)]
+
+
+def visible_text(body_html: str) -> str:
+    return html_to_text(_HIDDEN.sub(" ", body_html))
+
+
 def html_to_text(body_html: str) -> str:
     """Naive extraction, like most agent email tools: keeps comment and hidden-style text.
 

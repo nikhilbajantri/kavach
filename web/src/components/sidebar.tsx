@@ -16,7 +16,7 @@ const NAV = [
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-navy/80 backdrop-blur">
+    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col md:flex border-r border-border bg-navy/80 backdrop-blur">
       <div className="flex items-center gap-2.5 px-5 py-6">
         <div className="grid size-9 place-items-center rounded-xl bg-gold/15 ring-1 ring-gold/40">
           <ShieldCheck className="size-5 text-gold-bright" />

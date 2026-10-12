@@ -243,15 +243,29 @@ class Gateway:
         if approval is None or approval.status != "pending":
             raise KeyError(approval_id)
         approval.resolved_by = reviewer
+        original = approval.decision
+        # The human decision is evidence too: record it as its own ledger row.
+        record = original.model_copy(
+            update={
+                "call_id": f"call_{uuid.uuid4().hex[:10]}",
+                "verdict": Verdict.ALLOW if approve else Verdict.BLOCK,
+                "explanation": f"{'Approved' if approve else 'Rejected'} by {reviewer} after escalation "
+                f"({approval.id}). {original.explanation}",
+                "token_id": None,
+            }
+        )
         if not approve:
             approval.status = "rejected"
         else:
             approval.status = "approved"
-            decision = approval.decision
-            token = self.broker.mint(approval.session.identity, decision.tool, decision.final_args or {})
-            outcome = ToolOutcome(decision=decision)
-            await self._execute(approval.session, decision, token.token, outcome)
+            token = self.broker.mint(approval.session.identity, original.tool, original.final_args or {})
+            record.token_id = token.jti
+            outcome = ToolOutcome(decision=record)
+            await self._execute(approval.session, record, token.token, outcome)
             approval.result, approval.error = outcome.result, outcome.error
+        approval.session.decisions.append(record)
+        if self.ledger is not None:
+            self.ledger.append(record)
         self._emit("approval", approval.public())
         return approval.public()
 

@@ -49,4 +49,5 @@ class EventBus:
 
 
 def _sse(event: dict[str, Any]) -> str:
-    return f"id: {event['seq']}\nevent: {event['kind']}\ndata: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
+    # No `event:` line: every message reaches EventSource.onmessage; the kind is in the payload.
+    return f"id: {event['seq']}\ndata:{json.dumps(event, ensure_ascii=False, default=str)}\n\n"
