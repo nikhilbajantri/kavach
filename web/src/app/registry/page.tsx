@@ -1,0 +1,12 @@
+import { PageHeader } from "@/components/page-header";
+
+export default function Page() {
+  return (
+    <>
+      <PageHeader title="Tool Registry" subtitle="Pinned MCP tool manifests and supply-chain alerts." />
+      <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+        Coming in a later milestone.
+      </div>
+    </>
+  );
+}
