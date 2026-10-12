@@ -69,3 +69,7 @@ The broker signs tokens with EdDSA (Ed25519) rather than a shared HMAC secret. U
 ## D17: The ledger stores masked arguments plus a hash of the raw arguments
 
 Each evidence record keeps masked arguments, plus `args_hash`, the SHA-256 of the exact raw arguments. That hash equals the `args_hash` claim of the action token, so the ledger can prove what was executed without keeping a second copy of the PII (DPDP data minimisation). Everything sent to the browser (SSE events, approvals, alerts) passes through the same masker.
+
+## D18: Quarantined tools show the agent their pinned description
+
+When an upstream manifest drifts, KAVACH quarantines the tool (R0) and keeps serving the agent the manifest it pinned at registration. Without this, a poisoned description would still reach the model even though calls were blocked, and it could steer other tools. Tools that appear after pinning are quarantined and hidden until an operator re-pins. In enforce mode the gateway re-hashes upstream listings before every call; this runs before the latency timer starts, because it is upstream time.

@@ -17,8 +17,10 @@ from kavach.gateway import DecisionLog, EventSink, Gateway
 from kavach.identity.broker import CredentialBroker, TokenVerifier, load_or_generate_key
 from kavach.models import Decision
 from kavach.policy.directory import WorldDirectory
+from kavach.registry.pinning import ToolRegistry
 from kavach.transport import InProcessTransport
 from mocks.email.inbox import InboundEmail
+from mocks.tools import list_manifests
 from mocks.world import World
 
 DEMO_TASK_ID = "T-2026-10-12-001"
@@ -46,6 +48,8 @@ def build_runtime(
         inbox=inbox,
         extra_domains=extra_domains,
     )
+    registry = ToolRegistry()
+    registry.pin(list_manifests(world))  # tools are approved at registration, before any rug pull
     gateway = Gateway(
         InProcessTransport(world),
         broker,
@@ -53,6 +57,7 @@ def build_runtime(
         directory=WorldDirectory(world),
         ledger=ledger,
         on_event=on_event,
+        registry=registry,
     )
     return Runtime(world=world, gateway=gateway, broker=broker)
 

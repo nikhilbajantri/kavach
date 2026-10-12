@@ -31,6 +31,7 @@ Building milestone by milestone. See [PLAN.md](PLAN.md).
 - [x] M4: Cedar policies R0–R6, SANITISE remediation, plain-language explanations and a human-approval queue. With KAVACH ON, the refund is SANITISED to Ravi's verified UPI, the KYC export is BLOCKED (R1, R2, R3) and the customer reply is ALLOWED. Result: ₹0 lost, 0 records leaked, 4/4 tickets completed.
 - [x] M5: Ed25519 action tokens (60 s, bound to the exact arguments) that upstreams verify; a hash-chained evidence ledger with masked PII and `/ledger/verify`; an "RBI FREE-AI / DPDP evidence pack" export; the dashboard API with an SSE stream.
 - [x] M6: dashboard. Live Demo split view: streaming cards, CONTROL params highlighted, provenance chips that open an evidence drawer with the injected span highlighted, outcome tiles, ₹ formatting. Also: Approvals (approve or reject; the decision itself is ledgered) and the Evidence Ledger (chain badge, per-session evidence-pack export).
+- [x] M7: supply chain. Tool manifests are pinned with SHA-256 and scanned for instruction-like text. A rug pull quarantines the tool (R0 BLOCK, `tool_manifest_changed`) and raises an alert, and the agent only ever sees the pinned description.
 
 ## Team
 

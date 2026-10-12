@@ -26,6 +26,7 @@ from kavach.policy.remediation import REMEDIATIONS, ticket_customer
 from kavach.provenance.labeller import label_result, label_session_start
 from kavach.provenance.ledger import ProvenanceStore
 from kavach.registry.manifests import ParamKind, ToolSpec, spec_for
+from kavach.registry.pinning import ToolRegistry
 from kavach.transport import Transport
 from mocks.tools import UpstreamError
 
@@ -76,6 +77,8 @@ class Gateway:
         on_event: EventSink | None = None,
         org_domains: tuple[str, ...] = ORG_DOMAINS,
         approvals: ApprovalQueue | None = None,
+        registry: ToolRegistry | None = None,
+        verify_tools_each_call: bool = True,
     ) -> None:
         if enabled and directory is None:
             raise ValueError("enforce mode needs a TrustDirectory")
@@ -92,6 +95,8 @@ class Gateway:
         self.approvals = approvals if approvals is not None else ApprovalQueue()
         self.quarantined: set[str] = set()
         self.sessions: dict[str, Session] = {}
+        self.registry = registry
+        self.verify_tools_each_call = verify_tools_each_call
 
     # ------------------------------------------------------------------ sessions
     def open_session(self, operator_prompt: str, system_prompt: str, task_id: str | None = None) -> Session:
@@ -105,11 +110,33 @@ class Gateway:
         return session
 
     async def list_tools(self) -> list[dict[str, Any]]:
-        """The only tool list the agent ever sees: KAVACH re-exports upstream tools."""
-        return await self.transport.list_tools()
+        """The only tool list the agent ever sees: KAVACH re-exports upstream tools.
+
+        In enforce mode the agent gets the *pinned* manifests, so a rug-pulled
+        description never reaches the model.
+        """
+        manifests = await self.transport.list_tools()
+        if not (self.enabled and self.registry):
+            return manifests
+        await self.refresh_tools(manifests)
+        return self.registry.agent_view(manifests)
+
+    async def refresh_tools(self, manifests: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        """Re-hash upstream manifests against the pins; quarantine and alert on drift."""
+        if self.registry is None:
+            return []
+        alerts = self.registry.check(
+            manifests if manifests is not None else await self.transport.list_tools()
+        )
+        self.quarantined = self.registry.quarantined()
+        for alert in alerts:
+            self._emit("alert", {"supply_chain": alert})
+        return alerts
 
     # ------------------------------------------------------------------ calls
     async def call(self, session: Session, tool: str, args: dict[str, Any]) -> ToolOutcome:
+        if self.enabled and self.registry and self.verify_tools_each_call:
+            await self.refresh_tools()  # upstream listing time is not decision latency
         started = time.perf_counter()
         spec = spec_for(tool, args)
         decision = Decision(

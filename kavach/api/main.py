@@ -11,12 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
+from agent.prompts import OPERATOR_PROMPT, SYSTEM_PROMPT
 from kavach import __version__
 from kavach.api.state import AppState
 from kavach.ledger.export import export_json, export_markdown
 from kavach.ledger.mask import mask
 from kavach.models import Sensitivity
 from mocks.email.inbox import default_inbox, hidden_text, visible_text
+from mocks.tools import list_manifests, rug_pull
 
 
 class DemoRequest(BaseModel):
@@ -27,6 +29,10 @@ class DemoRequest(BaseModel):
 
 class Settings(BaseModel):
     kavach_enabled: bool
+
+
+class RugPull(BaseModel):
+    enabled: bool = True
 
 
 class Resolution(BaseModel):
@@ -161,6 +167,53 @@ def create_app(ledger_path: str | None = None) -> FastAPI:
             media_type="text/markdown; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="kavach-evidence-{session}.md"'},
         )
+
+    # ---------------------------------------------------------------- tool registry (L3)
+    @app.get("/registry/tools")
+    def registry_tools(request: Request) -> dict[str, Any]:
+        live = st(request).live
+        assert live.gateway.registry is not None
+        return {
+            "rug_pulled": "email.send" in live.world.tool_description_overrides,
+            "tools": live.gateway.registry.snapshot(),
+            "alerts": live.gateway.registry.alerts[-50:],
+        }
+
+    @app.post("/registry/rugpull")
+    async def registry_rugpull(body: RugPull, request: Request) -> dict[str, Any]:
+        """Demo switch: the upstream email server silently rewrites email.send's description."""
+        live = st(request).live
+        rug_pull(live.world, body.enabled)
+        alerts = await live.gateway.refresh_tools()
+        return {"rug_pulled": body.enabled, "new_alerts": alerts}
+
+    @app.post("/registry/approve")
+    async def registry_approve(request: Request) -> dict[str, Any]:
+        """Operator reviewed the upstream and re-pins it as it is now (also lifts quarantine)."""
+        live = st(request).live
+        assert live.gateway.registry is not None
+        rug_pull(live.world, False)
+        live.gateway.registry.approve_current(list_manifests(live.world))
+        live.gateway.quarantined = live.gateway.registry.quarantined()
+        return {"ok": True}
+
+    @app.post("/registry/probe")
+    async def registry_probe(request: Request) -> dict[str, Any]:
+        """Have the agent try an ordinary customer reply through the (possibly rug-pulled) tool."""
+        live = st(request).live
+        session = live.gateway.open_session(OPERATOR_PROMPT, SYSTEM_PROMPT)
+        await live.gateway.call(session, "crm.get_customer", {"email": "ravi.kumar@gmail.com"})
+        outcome = await live.gateway.call(
+            session,
+            "email.send",
+            {
+                "to": "ravi.kumar@gmail.com",
+                "subject": "Re: your ticket",
+                "body": "Your refund is on its way.",
+            },
+        )
+        st(request).runtimes[session.session_id] = live
+        return mask(outcome.decision.model_dump(mode="json"))
 
     @app.get("/metrics/latency")
     def latency(request: Request) -> dict[str, Any]:

@@ -30,6 +30,14 @@ class AppState:
         self.last_run_id: str | None = None
         self.alerts: list[dict[str, Any]] = []
         self._tasks: set[asyncio.Task[Any]] = set()
+        # A standing enforce-mode runtime for the Tool Registry page (rug-pull demo + probes).
+        self.live = build_runtime(enabled=True, on_event=self._live_event, ledger=self.ledger)
+        self.live.gateway.approvals = self.approvals
+
+    def _live_event(self, kind: str, data: dict[str, Any]) -> None:
+        if kind == "alert":
+            self.alerts.append({"run_id": None, "lane": "live", **data})
+        self.bus.publish(kind, data, lane="live")
 
     # ------------------------------------------------------------------ demo
     def start_demo(
