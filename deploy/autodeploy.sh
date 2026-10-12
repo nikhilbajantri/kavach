@@ -8,7 +8,7 @@ REPO_DIR="${REPO_DIR:-/home/ubuntu/kavach}"
 BRANCH="${BRANCH:-main}"
 COMPOSE=(docker compose -f "$REPO_DIR/deploy/docker-compose.ec2.yml")
 
-exec 9>/var/lock/kavach-deploy.lock
+exec 9>/tmp/kavach-deploy.lock
 flock -n 9 || exit 0  # a deploy is already running
 
 cd "$REPO_DIR"

@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# Run as the repo owner (git refuses repos owned by another user); docker group grants compose access.
+User=ubuntu
+SupplementaryGroups=docker
 ExecStart=/home/ubuntu/kavach/deploy/autodeploy.sh
 StandardOutput=append:/var/log/kavach-deploy.log
 StandardError=append:/var/log/kavach-deploy.log
